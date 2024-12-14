@@ -1,7 +1,6 @@
 package capture
 
 import (
-	"NIDS/internal/analysis"
 	"fmt"
 
 	"github.com/google/gopacket"
@@ -13,12 +12,10 @@ type PacketCapture struct {
 }
 
 func (pc *PacketCapture) ListInterfaces() ([]string, error) {
-    // List devices
     devices, err := pcap.FindAllDevs()
     if err != nil {
         return nil, err
     }
-    // Get all interfaces
     interfaces := []string{}
     for _, device := range devices {
         interfaces = append(interfaces, device.Name)
@@ -27,27 +24,21 @@ func (pc *PacketCapture) ListInterfaces() ([]string, error) {
     return interfaces, nil
 }
 
-func (pc *PacketCapture) CapturePackets() error {
-    // Open device
+func (pc *PacketCapture) CapturePackets() ([]gopacket.Packet, error) {
     handle, err := pcap.OpenLive(pc.Interface, 1600, true, pcap.BlockForever)
     if err != nil {
-        return fmt.Errorf("error opening device %s: %v", pc.Interface, err)
+        return nil , fmt.Errorf("error opening device %s: %v", pc.Interface, err)
     }
     defer handle.Close()
 
-    // Captured Packets
     packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+    packets := make([]gopacket.Packet, 0, 10)
     for packet := range packetSource.Packets() {
-        packetData := analysis.ParsePacket(packet)
-        traffic := analysis.ClassifyTraffic(packetData)
-
-        fmt.Printf("Packet: %s -> %s | Type: %s | Size: %d bytes\n", 
-            packetData.SourceIP, 
-            packetData.DestinationIP, 
-            traffic,
-            packetData.Size,
-        )
+        packets = append(packets, packet)
+        if(len(packets) >= 10) {
+            break
+        }
     }
 
-    return nil
+    return packets, nil
 }

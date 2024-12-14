@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/google/gopacket"
@@ -10,17 +11,34 @@ import (
 type PacketData struct {
 	SourceIP net.IP
 	SourcePort layers.TCPPort
+	ARPSourceIP      net.IP
+	ARPSourceMAC     string
 	
 	DestinationIP net.IP
 	DestinationPort layers.TCPPort
+	ARPTargetIP      net.IP
+	ARPTargetMAC     string
 
-	Protocol string
+	MACSource string
+	MACDestination string
 
 	Size int
+
+	Protocol string
+	ARPOperation     string
+	TCPFlags        []string
+	RequestRate     int
 }
 
 func ParsePacket(packet gopacket.Packet) *PacketData {
 	packetData := &PacketData{}
+
+	// Ethernet Layer
+	if ethLayer := packet.Layer(layers.LayerTypeEthernet); ethLayer != nil {
+		eth, _ := ethLayer.(*layers.Ethernet)
+		packetData.MACSource = eth.SrcMAC.String()
+		packetData.MACDestination = eth.DstMAC.String()
+	}
 
 	// IP Layer
 	ipv4Layer := packet.Layer(layers.LayerTypeIPv4)
@@ -38,8 +56,6 @@ func ParsePacket(packet gopacket.Packet) *PacketData {
             packetData.Protocol = "UDP"
         case layers.IPProtocolICMPv4:
             packetData.Protocol = "ICMPv4"
-		case layers.IPProtocolICMPv6:
-			packetData.Protocol = "ICMPv6"
         default:
             packetData.Protocol = "Unknown IPv4"
 		}
@@ -58,8 +74,6 @@ func ParsePacket(packet gopacket.Packet) *PacketData {
             packetData.Protocol = "TCP"
         case layers.IPProtocolUDP:
             packetData.Protocol = "UDP"
-        case layers.IPProtocolICMPv4:
-            packetData.Protocol = "ICMPv4"
 		case layers.IPProtocolICMPv6:
 			packetData.Protocol = "ICMPv6"
         default:
@@ -73,6 +87,28 @@ func ParsePacket(packet gopacket.Packet) *PacketData {
         tcp, _ := tcpLayer.(*layers.TCP)
         packetData.SourcePort = tcp.SrcPort
         packetData.DestinationPort = tcp.DstPort
+
+		flags := []string{}
+		if tcp.SYN {
+			flags = append(flags, "SYN")
+		}
+		if tcp.ACK {
+			flags = append(flags, "ACK")
+		}
+		if tcp.FIN {
+			flags = append(flags, "FIN")
+		}
+		if tcp.RST {
+			flags = append(flags, "RST")
+		}
+		if tcp.PSH {
+			flags = append(flags, "PSH")
+		}
+		if tcp.URG {
+			flags = append(flags, "URG")
+		}
+
+		packetData.TCPFlags = flags
     }
 
     // UDP layer
@@ -83,18 +119,55 @@ func ParsePacket(packet gopacket.Packet) *PacketData {
         packetData.DestinationPort = layers.TCPPort(udp.DstPort)
     }
 
+	// ARP Layer
+	arpLayer := packet.Layer(layers.LayerTypeARP)
+	if arpLayer != nil {
+		arp, _ := arpLayer.(*layers.ARP)
+
+		packetData.Protocol = "ARP"
+
+		packetData.ARPSourceIP = net.IP(arp.SourceProtAddress)
+		packetData.ARPSourceMAC = net.HardwareAddr(arp.SourceHwAddress).String()
+		packetData.ARPTargetIP = net.IP(arp.DstProtAddress)
+		packetData.ARPTargetMAC = net.HardwareAddr(arp.DstHwAddress).String()
+
+		if arp.Operation == layers.ARPRequest {
+			packetData.ARPOperation = "Request"
+		} else if arp.Operation == layers.ARPReply {
+			packetData.ARPOperation = "Reply"
+		}
+	}
+
+	// ICMP Layer
+	icmp4Layer := packet.Layer(layers.LayerTypeICMPv4)
+	if icmp4Layer != nil {
+		packetData.Protocol = "ICMPv4"
+	}
+
+	icmp6Layer := packet.Layer(layers.LayerTypeICMPv6)
+	if icmp6Layer != nil {
+		packetData.Protocol = "ICMPv6"
+	}
+
 	return packetData
 }
 
 func ClassifyTraffic(info *PacketData) string {
-    switch {
-    case info.Protocol == "TCP" && (info.DestinationPort == 80 || info.DestinationPort == 443):
-        return "Web Traffic"
-    case info.Protocol == "UDP" && info.DestinationPort == 53:
-        return "DNS Traffic"
-    case info.Protocol == "ICMPv4" || info.Protocol == "ICMPv6":
-        return "Network Diagnostic"
-    default:
-        return "Unknown Traffic"
-    }
+	switch {
+	case info.Protocol == "TCP" && (info.DestinationPort == 80 || info.DestinationPort == 443):
+		return "Web Traffic" 
+	case info.Protocol == "UDP" && info.DestinationPort == 53:
+		return "DNS Traffic"
+	case info.Protocol == "ICMPv4" || info.Protocol == "ICMPv6":
+		return "Network Diagnostic"
+	case info.Protocol == "ARP" && info.ARPOperation == "Request":
+		return "ARP Request"
+	case info.Protocol == "ARP" && info.ARPOperation == "Request":
+		return "ARP Reply"
+		}	
+	return "Unknown Traffic"
+}
+
+func ReportPacket(packet PacketData) {
+	fmt.Println(packet.SourceIP,packet.SourcePort,packet.DestinationIP,packet.DestinationPort,packet.Protocol)
 }

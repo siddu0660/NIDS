@@ -7,54 +7,47 @@ import (
 	"NIDS/internal/analysis"
 	"NIDS/internal/capture"
 	"NIDS/internal/detection"
-
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/pcap"
 )
 
 func main() {
-    capturer := capture.PacketCapture{}
+	capturer := &capture.PacketCapture{}
 
-    interfaces, err := capturer.ListInterfaces()
-    if err != nil {
-        log.Fatalf("Failed to list interfaces: %v", err)
-    }
+	interfaces, err := capturer.ListInterfaces()
+	if err != nil {
+		log.Fatalf("Failed to list interfaces: %v", err)
+	}
 
-    for _, iface := range interfaces {
-        if iface != "lo" && iface != "localhost" {
-            capturer.Interface = iface
-            break
-        }
-    }
+	for _, iface := range interfaces {
+		if iface != "lo" && iface != "localhost" {
+			capturer.Interface = iface
+			break
+		}
+	}
 
-    if capturer.Interface == "" {
-        log.Fatal("No suitable network interface found")
-    }
+	if capturer.Interface == "" {
+		log.Fatal("No suitable network interface found")
+	}
 
-    fmt.Printf("Starting packet capture on interface: %s\n", capturer.Interface)
+	fmt.Printf("Starting packet capture on interface: %s\n", capturer.Interface)
 
-    handle, err := pcap.OpenLive(capturer.Interface, 1600, true, pcap.BlockForever)
-    if err != nil {
-        log.Fatalf("Error opening device: %v", err)
-    }
-    defer handle.Close()
+	packets, err := capturer.CapturePackets()
+	if err != nil {
+		log.Fatalf("Error capturing packets: %v", err)
+	}
 
-    packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-    
-    for packet := range packetSource.Packets() {
-        packetInfo := analysis.ParsePacket(packet)
-        trafficType := analysis.ClassifyTraffic(packetInfo)
-        threats := detection.DetectThreats(packetInfo)
+    td := detection.NewThreatDetector()
+    packetCounter := map[string]int {}
+    detectedThreats := make([]detection.ThreatEvent,0)
 
-        if len(threats) > 0 {
-            fmt.Printf("THREAT DETECTED: %v\n", threats)
-        }
+	for _, packet := range packets {
+        packetParsed := *analysis.ParsePacket(packet)
+        classification := analysis.ClassifyTraffic(&packetParsed)
+        packetCounter[classification] += 1
 
-        fmt.Printf("Packet: %s -> %s | Type: %s | Size: %d bytes\n", 
-            packetInfo.SourceIP, 
-            packetInfo.DestinationIP, 
-            trafficType,
-            packetInfo.Size,
-        )
-    }
+        threat := td.DetectThreats(&packetParsed)
+        detectedThreats = append(detectedThreats, threat...)
+	}
+
+    // fmt.Println(detectedThreats)
+    fmt.Println(packetCounter)
 }
