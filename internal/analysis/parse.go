@@ -3,6 +3,8 @@ package analysis
 import (
 	"fmt"
 	"net"
+	"sync"
+	"time"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -30,8 +32,29 @@ type PacketData struct {
 	RequestRate     int
 }
 
+var (
+	packetCounter int
+	mutex sync.Mutex
+	lastFetchedTime time.Time
+)
 func ParsePacket(packet gopacket.Packet) *PacketData {
 	packetData := &PacketData{}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if lastFetchedTime.IsZero() {
+		lastFetchedTime = time.Now()
+	} else {
+		duration := time.Since(lastFetchedTime)
+		if duration >= time.Second {
+			packetData.RequestRate = packetCounter
+			packetCounter = 0
+			lastFetchedTime = time.Now()
+		}
+	}
+
+	packetCounter++
 
 	// Ethernet Layer
 	if ethLayer := packet.Layer(layers.LayerTypeEthernet); ethLayer != nil {

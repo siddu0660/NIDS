@@ -24,21 +24,25 @@ func (pc *PacketCapture) ListInterfaces() ([]string, error) {
     return interfaces, nil
 }
 
-func (pc *PacketCapture) CapturePackets() ([]gopacket.Packet, error) {
-    handle, err := pcap.OpenLive(pc.Interface, 1600, true, pcap.BlockForever)
-    if err != nil {
-        return nil , fmt.Errorf("error opening device %s: %v", pc.Interface, err)
-    }
-    defer handle.Close()
+func (pc *PacketCapture) StartCapture() (*pcap.Handle, error) {
+	handle, err := pcap.OpenLive(pc.Interface, 1600, true, pcap.BlockForever)
+	if err != nil {
+		return nil, fmt.Errorf("error opening device %s: %v", pc.Interface, err)
+	}
+	return handle, nil
+}
 
-    packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-    packets := make([]gopacket.Packet, 0, 10)
-    for packet := range packetSource.Packets() {
-        packets = append(packets, packet)
-        if(len(packets) >= 10) {
-            break
-        }
-    }
+func (pc *PacketCapture) CapturePackets(handle *pcap.Handle, n int, packetChan chan<- gopacket.Packet) {
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	packetCount := 0
 
-    return packets, nil
+	for packet := range packetSource.Packets() {
+		packetChan <- packet
+		packetCount++
+		if packetCount >= n {
+			break
+		}
+	}
+
+	close(packetChan)
 }

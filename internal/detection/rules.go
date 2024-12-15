@@ -94,6 +94,22 @@ func (ct *ConnectionTracker) pruneOldConnections(ip string) {
 	ct.connectionCounts[ip] = len(newTimes)
 }
 
+func contains(flags []string, flag string) bool {
+    for _, f := range flags {
+        if f == flag {
+            return true
+        }
+    }
+    return false
+}
+
+func isInSameSubnet(ip1, ip2 net.IP) bool {
+    ip1to4 := ( ip1.To4() != nil )
+    ip2to4 := ( ip2.To4() != nil )
+    
+    return ip1[0] == ip2[0] && ip1to4 && ip2to4
+}
+
 var DefaultThreatRules = []ThreatRule{
     {
         Name:        "Highly Port Scan",
@@ -114,6 +130,116 @@ var DefaultThreatRules = []ThreatRule{
 					info.DestinationPort != 443
         },
         Severity: 5,
+    },
+    {
+        Name:        "Port Scanning",
+        Description: "Suspicious activity detected across multiple destination ports.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "TCP" && info.RequestRate > 100
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "ARP Spoofing",
+        Description: "Mismatch in ARP source IP and MAC address.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.ARPOperation == "request" && info.ARPSourceMAC != info.MACSource
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "Unusual Packet Size",
+        Description: "Packet size exceeds normal limits.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Size > 1500
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "SYN Flood",
+        Description: "High number of SYN packets without completing handshake.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "TCP" && contains(info.TCPFlags, "SYN") && !contains(info.TCPFlags, "ACK") && info.RequestRate > 200
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "ACK Flood",
+        Description: "High number of ACK packets, possibly indicating flood attack.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "TCP" && contains(info.TCPFlags, "ACK") && info.RequestRate > 200
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "Ping of Death",
+        Description: "Packet size exceeds maximum ICMP size, potentially causing denial of service.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "ICMP" && info.Size > 65535
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "Brute Force Login",
+        Description: "Excessive connection attempts to a single IP address.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.RequestRate > 300
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "Unauthorized ARP Operation",
+        Description: "ARP request to a target IP that does not match expected subnet.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.ARPOperation == "request" && !isInSameSubnet(info.ARPSourceIP, info.ARPTargetIP)
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "Data Exfiltration",
+        Description: "Large outbound data transfer detected.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "TCP" && info.Size > 1000000
+        },
+        Severity: 5,
+    },
+    {
+        Name:        "IP Fragmentation Attack",
+        Description: "Unusual number of fragmented IP packets detected.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Size < 576 && info.RequestRate > 100
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "Suspicious ARP Broadcast",
+        Description: "High number of ARP broadcasts in a short period.",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.ARPOperation == "broadcast" && info.RequestRate > 200
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "SSDP Spoof",
+        Description: "SSDP packet with invalid source address",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "UDP" && 
+					info.DestinationPort == 1900 &&
+					info.SourceIP.IsGlobalUnicast() &&
+					info.DestinationIP.IsGlobalUnicast()
+        },
+        Severity: 4,
+    },
+    {
+        Name:        "DNS Spoof",
+        Description: "DNS response with invalid source address",
+        Condition: func(info *analysis.PacketData) bool {
+            return info.Protocol == "UDP" && 
+					info.DestinationPort == 53 &&
+					info.SourceIP.IsGlobalUnicast() &&
+					info.DestinationIP.IsGlobalUnicast()
+        },
+        Severity: 4,
     },
 }
 
@@ -149,13 +275,13 @@ func (td *ThreatDetector) recordThreat(threat ThreatEvent) {
 
     td.threatHistory[threat.SourceIP.String()] = append(td.threatHistory[threat.SourceIP.String()], threat)
 
-    log.Printf(
-        "THREAT DETECTED: %s from %s - %s (Severity: %d)", 
-		threat.RuleName, 
-		threat.SourceIP, 
-		threat.Description, 
-		threat.Severity,
-    )
+    // log.Printf(
+    //     "THREAT DETECTED: %s from %s - %s (Severity: %d)", 
+	// 	threat.RuleName, 
+	// 	threat.SourceIP, 
+	// 	threat.Description, 
+	// 	threat.Severity,
+    // )
 }
 
 func (td *ThreatDetector) GetThreatHistory(ip string) []ThreatEvent {
