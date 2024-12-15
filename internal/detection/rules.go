@@ -2,8 +2,10 @@ package detection
 
 import (
 	"NIDS/internal/analysis"
+	"encoding/json"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 )
@@ -108,6 +110,25 @@ func isInSameSubnet(ip1, ip2 net.IP) bool {
     ip2to4 := ( ip2.To4() != nil )
     
     return ip1[0] == ip2[0] && ip1to4 && ip2to4
+}
+
+func LoadCustomRules(files []string) (error) {
+
+    for _,file := range files {
+        data, err := os.ReadFile(file)
+        if err != nil {
+            return err
+        }
+
+        var customRules []ThreatRule
+        if err := json.Unmarshal(data, &customRules); err != nil {
+            return err
+        }
+
+        DefaultThreatRules = append(DefaultThreatRules, customRules...)
+    }
+    
+    return nil
 }
 
 var DefaultThreatRules = []ThreatRule{
@@ -274,14 +295,6 @@ func (td *ThreatDetector) recordThreat(threat ThreatEvent) {
     defer td.mu.Unlock()
 
     td.threatHistory[threat.SourceIP.String()] = append(td.threatHistory[threat.SourceIP.String()], threat)
-
-    // log.Printf(
-    //     "THREAT DETECTED: %s from %s - %s (Severity: %d)", 
-	// 	threat.RuleName, 
-	// 	threat.SourceIP, 
-	// 	threat.Description, 
-	// 	threat.Severity,
-    // )
 }
 
 func (td *ThreatDetector) GetThreatHistory(ip string) []ThreatEvent {

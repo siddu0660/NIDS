@@ -42,6 +42,13 @@ func main() {
 	noOfPackets, _ := reader.ReadString('\n')
 	n, _ := strconv.Atoi(noOfPackets[:len(noOfPackets)-1])
 
+	writePcap := true
+	fmt.Printf("Enter the filename to save the captured packets or type Skip : ")
+	pcapFile , _ := reader.ReadString('\n')
+	pcapFile = pcapFile[:len(pcapFile)-1]
+	if pcapFile == "Skip" {
+		writePcap = false
+	}
 	fmt.Printf("Starting packet capture on interface: %s\n", capturer.Interface)
 	fmt.Printf("Starting packet capture on %v packets\n", n)
 
@@ -61,10 +68,20 @@ func main() {
 		capturer.CapturePackets(handle, n, packetChan)
 	}()
 
+	go func() {
+		err := capturer.SaveToPCAP(pcapFile, packetChan, handle.LinkType())
+		if err != nil {
+			log.Fatalf("Error saving packets to PCAP file: %v", err)
+		}
+	}()
+
 	packetCount := 0
 	for packet := range packetChan {
 		packetParsed := *analysis.ParsePacket(packet)
 		classification := analysis.ClassifyTraffic(&packetParsed)
+		if writePcap {
+			// 
+		}
 		packetCounter[classification]++
 		threats := td.DetectThreats(&packetParsed)
 		
@@ -85,15 +102,4 @@ func main() {
 	for k , v := range threatCounter {
 		fmt.Printf("%v -> %v threats\n",k,v)
 	}
-	// fmt.Println("Packets captured and processed successfully!")
-	// fmt.Println("Packet Counter:", packetCounter)
-	// fmt.Println("Threats Detected:", detectedThreats)
 }
-
-// func main() {
-// 	packets := []int{10,25,50,100}
-
-// 	for _, i := range packets {
-// 		main_part(i)
-// 	}
-// }

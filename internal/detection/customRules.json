@@ -1,0 +1,14 @@
+[
+    {
+        "name": "High Port Traffic",
+        "description": "Detects traffic to high-numbered ports.",
+        "condition": "info.DestinationPort > 50000",
+        "severity": 3
+    },
+    {
+        "name": "Large Packet",
+        "description": "Detects packets larger than 1 MB.",
+        "condition": "info.Size > 1048576",
+        "severity": 5
+    }
+]

@@ -3,6 +3,7 @@ package analysis
 import (
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -187,10 +188,48 @@ func ClassifyTraffic(info *PacketData) string {
 		return "ARP Request"
 	case info.Protocol == "ARP" && info.ARPOperation == "Request":
 		return "ARP Reply"
-		}	
+	}	
+	
 	return "Unknown Traffic"
 }
 
 func ReportPacket(packet PacketData) {
 	fmt.Println(packet.SourceIP,packet.SourcePort,packet.DestinationIP,packet.DestinationPort,packet.Protocol)
+}
+
+func LogPacket(packet PacketData , filename string) error {
+	
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("failed to open log file: %v", err)
+    }
+    defer file.Close()
+	
+	var logEntry string
+	if packet.Protocol == "ARP" {
+		logEntry = fmt.Sprintf("%s | Src: %s:%d | Dst: %s:%d | Protocol: %s | Length: %d TCP Flags : %v\n", 
+			time.Now().Format(time.RFC1123),
+			packet.ARPSourceIP, packet.SourcePort,
+			packet.ARPTargetIP, packet.DestinationPort,
+			packet.Protocol,
+			packet.Size,
+			packet.TCPFlags,
+    	)
+	} else {
+		logEntry = fmt.Sprintf("%s | Src: %s:%d | Dst: %s:%d | Protocol: %s | Length: %d TCP Flags : %v\n", 
+			time.Now().Format(time.RFC1123),
+			packet.SourceIP, packet.SourcePort,
+			packet.DestinationIP, packet.DestinationPort,
+			packet.Protocol,
+			packet.Size,
+			packet.TCPFlags,
+		)
+	}
+
+	_, err = file.WriteString(logEntry)
+    if err != nil {
+        return fmt.Errorf("failed to write to log file: %v", err)
+    }
+
+	return nil
 }
